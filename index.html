@@ -32,6 +32,7 @@ main{display:flex;height:calc(100vh - 70px)}
 .fixmsg{font-size:14px}
 .iw{padding:10px 12px;font-size:15px;line-height:1.5;min-width:240px}
 .iw b{font-size:17px}
+.iw button.navi{margin:8px 0 4px;padding:10px 16px;font-size:17px;font-weight:700;border:none;border-radius:8px;background:#fee500;color:#191919;cursor:pointer;min-height:44px}
 .iw a.tel{display:inline-block;margin:2px 0;padding:4px 10px;border-radius:6px;background:#dcfce7;color:#166534;font-weight:700;text-decoration:none}
 #tabs{display:none}
 @media(max-width:800px){
@@ -96,6 +97,16 @@ function initGoogle(){
   google.accounts.id.renderButton(document.getElementById('gbtn'), { type: 'standard', theme: 'outline', size: 'large', text: 'signin_with', locale: 'ko', width: 300 });
   google.accounts.id.prompt();
 }
+var ks = document.createElement('script'); ks.src = 'https://t1.kakaocdn.net/kakao_js_sdk/2.8.1/kakao.min.js'; ks.async = true;
+ks.onload = function(){ try { if (!Kakao.isInitialized()) Kakao.init(KEY); } catch (e) {} };
+document.head.appendChild(ks);
+function startNavi(code){
+  var d = DATA.filter(function(x){ return x.code === code; })[0]; if (!d || !cache[code]) return;
+  if (!isPhone() && !/Android|iPhone|iPad/i.test(navigator.userAgent)) { document.getElementById('status').textContent = '⚠ 카카오내비는 핸드폰에서 눌러야 열립니다'; return; }
+  if (!window.Kakao || !Kakao.Navi) { document.getElementById('status').textContent = '❌ 카카오내비 연결을 불러오지 못했습니다. 새로고침해 주세요'; return; }
+  try { Kakao.Navi.start({ name: d.n.replace(/^[0-9]+\./,''), x: cache[code][1], y: cache[code][0], coordType: 'wgs84' }); }
+  catch (e) { document.getElementById('status').textContent = '❌ 카카오내비 실행 실패: ' + e.message; }
+}
 var gs = document.createElement('script'); gs.src = 'https://accounts.google.com/gsi/client'; gs.async = true; gs.onload = initGoogle;
 gs.onerror = function(){ document.getElementById('loginmsg').textContent = '구글 로그인 버튼을 불러오지 못했습니다. 새로고침해 주세요.'; };
 document.head.appendChild(gs);
@@ -159,7 +170,7 @@ function telLinks(s){
 }
 function openInfo(d, m){
   selCode = d.code;
-  iw.setContent('<div class="iw"><b>'+esc(d.n)+'</b><br>대표: '+esc(d.ceo||'-')+'<br>핸드폰: '+telLinks(d.hp)+'<br>전화: '+telLinks(d.tel)+'<br>'+esc(d.a)+(d.memo?'<br>비고: '+esc(d.memo):'')+'<br><a target="_blank" href="https://map.kakao.com/link/to/'+encodeURIComponent(d.n)+','+cache[d.code][0]+','+cache[d.code][1]+'">길찾기</a></div>');
+  iw.setContent('<div class="iw"><b>'+esc(d.n)+'</b><br>대표: '+esc(d.ceo||'-')+'<br>핸드폰: '+telLinks(d.hp)+'<br>전화: '+telLinks(d.tel)+'<br>'+esc(d.a)+(d.memo?'<br>비고: '+esc(d.memo):'')+'<br><button class="navi" onclick="startNavi(\''+esc(d.code)+'\')">카카오내비로 안내</button><br><a target="_blank" href="https://map.kakao.com/link/to/'+encodeURIComponent(d.n)+','+cache[d.code][0]+','+cache[d.code][1]+'">카카오맵 길찾기</a></div>');
   iw.open(map, m);
   document.querySelectorAll('.it').forEach(function(e){ e.classList.toggle('sel', e.getAttribute('data-c')===d.code); });
 }

@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>거래처 지도 (신당·을지로)</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:'Malgun Gothic','Apple SD Gothic Neo',sans-serif;color:#111;background:#f4f5f7}
+header{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:12px 16px;background:#fff;border-bottom:1px solid #d1d5db}
+h1{margin:0 12px 0 0;font-size:24px}
+#q{font-size:18px;padding:10px 12px;border:1px solid #9ca3af;border-radius:8px;width:260px}
+.f{font-size:17px;padding:10px 16px;border-radius:8px;border:1px solid #9ca3af;background:#fff;cursor:pointer;min-height:44px}
+.f.on{background:#1d4ed8;color:#fff;border-color:#1d4ed8}
+#status{font-size:16px;color:#374151}
+main{display:flex;height:calc(100vh - 70px)}
+#list{width:380px;overflow-y:auto;background:#fff;border-right:1px solid #d1d5db}
+.it{padding:12px 14px;border-bottom:1px solid #e5e7eb;cursor:pointer}
+.it:hover,.it.sel{background:#eff6ff}
+.nm{font-size:18px;font-weight:700}
+.ad{font-size:15px;color:#374151;margin-top:4px}
+.tg{display:inline-block;font-size:13px;padding:2px 8px;border-radius:10px;color:#fff;margin-right:6px}
+.t신당{background:#1d4ed8}.t을지로{background:#c2410c}
+.miss{color:#b91c1c;font-size:13px}
+#map{flex:1}
+.iw{padding:10px 12px;font-size:15px;line-height:1.5;min-width:240px}
+.iw b{font-size:17px}
+@media(max-width:800px){main{flex-direction:column}#list{width:100%;height:40vh}#map{height:60vh}}
+</style>
+</head>
+<body>
+<header>
+<h1>거래처 지도</h1>
+<label for="q" style="font-size:16px">검색</label>
+<input id="q" placeholder="거래처명·대표자·주소">
+<button class="f on" data-g="전체">전체</button>
+<button class="f" data-g="신당">신당</button>
+<button class="f" data-g="을지로">을지로</button>
+<span id="status">준비</span>
+</header>
+<div id="login" style="position:fixed;inset:0;background:#f4f5f7;z-index:50;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;padding:20px;text-align:center">
+<h2 style="margin:0;font-size:26px">거래처 지도</h2>
+<p style="margin:0;font-size:18px">회사 구글 계정(@gagucafe114.com)으로 로그인해 주세요.</p>
+<div id="gbtn"></div>
+<p id="loginmsg" style="margin:0;font-size:16px;color:#b91c1c"></p>
+</div>
+<main><div id="list"></div><div id="map"></div></main>
+<script>
+var DATA = [];
+var GOOGLE_CLIENT_ID = '110271893577-dhusip1o4sb2rr927imrejjckk5i58ea.apps.googleusercontent.com';
+var API = 'https://skod.app.n8n.cloud/webhook/odin-client-map';
+var mapReady = false, dataReady = false;
+function onGoogle(resp){
+  var msg = document.getElementById('loginmsg');
+  msg.style.color = '#374151'; msg.textContent = '회사 계정 확인 중…';
+  fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + resp.credential }, body: '{}', credentials: 'omit', cache: 'no-store' })
+    .then(function(r){ return r.json().then(function(j){ if (!r.ok || !j.ok) throw Error(j.error || ('응답 오류 ' + r.status)); return j; }); })
+    .then(function(j){
+      DATA = j.rows || []; dataReady = true;
+      document.getElementById('login').style.display = 'none';
+      try { var p = JSON.parse(atob(resp.credential.split('.')[1].replace(/-/g,'+').replace(/_/g,'/'))); setTimeout(function(){ location.reload(); }, Math.max(60000, p.exp*1000 - Date.now())); } catch (e) {}
+      start();
+    })
+    .catch(function(e){ msg.style.color = '#b91c1c'; msg.textContent = '로그인 실패: ' + e.message; });
+}
+function initGoogle(){
+  google.accounts.id.initialize({ client_id: GOOGLE_CLIENT_ID, callback: onGoogle, auto_select: true, hd: 'gagucafe114.com', use_fedcm_for_button: true });
+  google.accounts.id.renderButton(document.getElementById('gbtn'), { type: 'standard', theme: 'outline', size: 'large', text: 'signin_with', locale: 'ko', width: 300 });
+  google.accounts.id.prompt();
+}
+var gs = document.createElement('script'); gs.src = 'https://accounts.google.com/gsi/client'; gs.async = true; gs.onload = initGoogle;
+gs.onerror = function(){ document.getElementById('loginmsg').textContent = '구글 로그인 버튼을 불러오지 못했습니다. 새로고침해 주세요.'; };
+document.head.appendChild(gs);
+function start(){ if (mapReady && dataReady) geocodeAll(0); }
+var KEY = '6578a3cb2998b7b15d7605eae26170c3';
+var CACHE_KEY = 'odin_client_geo_v1';
+var cache = {}; try { cache = JSON.parse(localStorage.getItem(CACHE_KEY) || '{}'); } catch (e) {}
+function saveCache(){ try { localStorage.setItem(CACHE_KEY, JSON.stringify(cache)); } catch (e) {} }
+var map, geocoder, clusterer, iw, group = '전체', selCode = null;
+var s = document.createElement('script');
+s.src = 'https://dapi.kakao.com/v2/maps/sdk.js?appkey=' + KEY + '&libraries=services,clusterer&autoload=false';
+s.onload = function(){ kakao.maps.load(init); };
+s.onerror = function(){ document.getElementById('status').textContent = '❌ 지도 불러오기 실패 (도메인 등록 확인)'; };
+document.head.appendChild(s);
+
+function init(){
+  map = new kakao.maps.Map(document.getElementById('map'), { center: new kakao.maps.LatLng(37.5665, 127.0120), level: 5 });
+  geocoder = new kakao.maps.services.Geocoder();
+  clusterer = new kakao.maps.MarkerClusterer({ map: map, averageCenter: true, minLevel: 4 });
+  iw = new kakao.maps.InfoWindow({ removable: true });
+  mapReady = true; start();
+}
+function cleanAddr(a){ return a.replace(/\s*\(.*?\)\s*/g,' ').replace(/,.*$/,'').replace(/\s+/g,' ').trim(); }
+function geocodeAll(i){
+  var st = document.getElementById('status');
+  if (i >= DATA.length){ saveCache(); var miss = DATA.filter(function(d){return !cache[d.code];}).length; st.textContent = '✅ 완료 · ' + (DATA.length - miss) + '곳 표시' + (miss ? ' / 위치 못 찾음 ' + miss + '곳' : ''); render(); return; }
+  var d = DATA[i];
+  st.textContent = '⏳ 주소 → 위치 변환 ' + (i+1) + ' / ' + DATA.length;
+  if (cache[d.code]) { geocodeAll(i+1); return; }
+  geocoder.addressSearch(cleanAddr(d.a), function(r, status){
+    if (status === kakao.maps.services.Status.OK){ cache[d.code] = [ +r[0].y, +r[0].x ]; geocodeAll(i+1); }
+    else geocoder.addressSearch(d.a, function(r2, st2){ if (st2 === kakao.maps.services.Status.OK) cache[d.code] = [ +r2[0].y, +r2[0].x ]; setTimeout(function(){ geocodeAll(i+1); }, 30); });
+  });
+}
+function esc(t){ return String(t||'').replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+function visible(){
+  var q = document.getElementById('q').value.trim();
+  return DATA.filter(function(d){ return (group==='전체'||d.g===group) && (!q || (d.n+d.ceo+d.a).indexOf(q) >= 0); });
+}
+function render(){
+  var rows = visible(), html = '', markers = [];
+  rows.forEach(function(d){
+    var pos = cache[d.code];
+    html += '<div class="it'+(d.code===selCode?' sel':'')+'" data-c="'+esc(d.code)+'"><div class="nm"><span class="tg t'+esc(d.g)+'">'+esc(d.g)+'</span>'+esc(d.n)+'</div><div class="ad">'+esc(d.a)+'</div>'+(pos?'':'<div class="miss">위치 못 찾음 — 주소 확인 필요</div>')+'</div>';
+    if (pos && clusterer){
+      var m = new kakao.maps.Marker({ position: new kakao.maps.LatLng(pos[0], pos[1]), title: d.n });
+      kakao.maps.event.addListener(m, 'click', function(){ openInfo(d, m); });
+      d._m = m; markers.push(m);
+    }
+  });
+  document.getElementById('list').innerHTML = html || '<div class="it">검색 결과 없음</div>';
+  if (clusterer){ clusterer.clear(); clusterer.addMarkers(markers); }
+}
+function openInfo(d, m){
+  selCode = d.code;
+  var tel = d.hp || d.tel;
+  iw.setContent('<div class="iw"><b>'+esc(d.n)+'</b><br>대표: '+esc(d.ceo||'-')+'<br>핸드폰: '+esc(d.hp||'-')+'<br>전화: '+esc(d.tel||'-')+'<br>'+esc(d.a)+(d.memo?'<br>비고: '+esc(d.memo):'')+'<br><a target="_blank" href="https://map.kakao.com/link/to/'+encodeURIComponent(d.n)+','+cache[d.code][0]+','+cache[d.code][1]+'">길찾기</a></div>');
+  iw.open(map, m);
+  document.querySelectorAll('.it').forEach(function(e){ e.classList.toggle('sel', e.getAttribute('data-c')===d.code); });
+}
+document.getElementById('list').addEventListener('click', function(e){
+  var it = e.target.closest('.it'); if (!it) return;
+  var d = DATA.filter(function(x){ return x.code === it.getAttribute('data-c'); })[0];
+  if (!d || !cache[d.code] || !map) return;
+  map.setLevel(2); map.panTo(new kakao.maps.LatLng(cache[d.code][0], cache[d.code][1]));
+  openInfo(d, d._m);
+});
+document.getElementById('q').addEventListener('input', render);
+document.querySelectorAll('.f').forEach(function(b){ b.addEventListener('click', function(){
+  group = b.getAttribute('data-g');
+  document.querySelectorAll('.f').forEach(function(x){ x.classList.toggle('on', x===b); });
+  render();
+}); });
+</script>
+</body>
+</html>

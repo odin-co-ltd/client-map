@@ -1,7 +1,8 @@
 <!doctype html>
-<html lang="ko">
+<html lang="ko" translate="no">
 <head>
 <meta charset="utf-8">
+<meta name="google" content="notranslate">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>거래처 지도 (신당·을지로)</title>
 <style>
@@ -31,10 +32,26 @@ main{display:flex;height:calc(100vh - 70px)}
 .fixmsg{font-size:14px}
 .iw{padding:10px 12px;font-size:15px;line-height:1.5;min-width:240px}
 .iw b{font-size:17px}
-@media(max-width:800px){main{flex-direction:column}#list{width:100%;height:40vh}#map{height:60vh}}
+#tabs{display:none}
+@media(max-width:800px){
+header{padding:8px 10px;gap:6px}
+h1{font-size:20px;margin:0 6px 0 0}
+header label[for=q]{display:none}
+#q{width:100%;order:9;font-size:17px;padding:8px 10px}
+.f,#missbtn{font-size:15px !important;padding:6px 10px !important;min-height:38px !important}
+#status{font-size:14px;width:100%;order:10}
+#tabs{display:flex;border-bottom:1px solid #d1d5db;background:#fff}
+#tabs button{flex:1;font-size:18px;font-weight:700;padding:12px 0;border:none;background:#fff;color:#6b7280;border-bottom:3px solid transparent;cursor:pointer}
+#tabs button.on{color:#1d4ed8;border-bottom-color:#1d4ed8}
+main{display:block;height:calc(100vh - 200px)}
+#list{width:100%;height:100%;border-right:none}
+#map{width:100%;height:100%}
+body.tab-list #map{display:none}
+body.tab-map #list{display:none}
+}
 </style>
 </head>
-<body>
+<body class="tab-list">
 <header>
 <h1>거래처 지도</h1>
 <label for="q" style="font-size:16px">검색</label>
@@ -51,6 +68,7 @@ main{display:flex;height:calc(100vh - 70px)}
 <div id="gbtn"></div>
 <p id="loginmsg" style="margin:0;font-size:16px;color:#b91c1c"></p>
 </div>
+<div id="tabs"><button data-tab="list" class="on">목록</button><button data-tab="map">지도</button></div>
 <main><div id="list"></div><div id="map"></div></main>
 <script>
 var DATA = [];
@@ -68,7 +86,7 @@ function onGoogle(resp){
       TOKEN = resp.credential; DATA = j.rows || []; dataReady = true;
       document.getElementById('login').style.display = 'none';
       try { var p = JSON.parse(atob(resp.credential.split('.')[1].replace(/-/g,'+').replace(/_/g,'/'))); setTimeout(function(){ location.reload(); }, Math.max(60000, p.exp*1000 - Date.now())); } catch (e) {}
-      start();
+      fitMain(); start();
     })
     .catch(function(e){ msg.style.color = '#b91c1c'; msg.textContent = '로그인 실패: ' + e.message; });
 }
@@ -97,7 +115,7 @@ function init(){
   geocoder = new kakao.maps.services.Geocoder();
   clusterer = new kakao.maps.MarkerClusterer({ map: map, averageCenter: true, minLevel: 4 });
   iw = new kakao.maps.InfoWindow({ removable: true });
-  mapReady = true; start();
+  mapReady = true; fitMain(); start();
 }
 function cleanAddr(a){ return a.replace(/\s*\(.*?\)\s*/g,' ').replace(/,.*$/,'').replace(/\s+/g,' ').trim(); }
 function geocodeAll(i){
@@ -146,10 +164,20 @@ document.getElementById('list').addEventListener('click', function(e){
   var it = e.target.closest('.it'); if (!it) return;
   var d = DATA.filter(function(x){ return x.code === it.getAttribute('data-c'); })[0];
   if (!d || !cache[d.code] || !map) return;
+  if (isPhone()) showTab('map');
   map.setLevel(2); map.panTo(new kakao.maps.LatLng(cache[d.code][0], cache[d.code][1]));
   openInfo(d, d._m);
 });
 document.getElementById('q').addEventListener('input', render);
+function showTab(name){
+  document.body.classList.remove('tab-list','tab-map'); document.body.classList.add('tab-' + name);
+  document.querySelectorAll('#tabs button').forEach(function(b){ b.classList.toggle('on', b.getAttribute('data-tab') === name); });
+  if (name === 'map' && map) { map.relayout(); }
+}
+function isPhone(){ return window.matchMedia('(max-width:800px)').matches; }
+document.querySelectorAll('#tabs button').forEach(function(b){ b.addEventListener('click', function(){ showTab(b.getAttribute('data-tab')); }); });
+function fitMain(){ var m = document.querySelector('main'); if (isPhone()) { m.style.height = (window.innerHeight - m.getBoundingClientRect().top) + 'px'; } else { m.style.height = ''; } if (map) map.relayout(); }
+window.addEventListener('resize', fitMain);
 document.getElementById('missbtn').addEventListener('click', function(){ onlyMiss = !onlyMiss; render(); });
 function saveAddr(btn){
   var code = btn.getAttribute('data-save'), box = btn.closest('.fix'), input = box.querySelector('input'), msg = box.querySelector('.fixmsg');

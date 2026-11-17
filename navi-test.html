@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ko" translate="no">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="google" content="notranslate">
+<title>카카오내비 시험</title>
+<style>
+body{margin:0;padding:20px;font-family:'Malgun Gothic','Apple SD Gothic Neo',sans-serif;font-size:18px;line-height:1.6;color:#111}
+h1{font-size:24px;margin:0 0 12px}
+button{display:block;width:100%;margin:12px 0;padding:16px;font-size:20px;font-weight:700;border:none;border-radius:10px;cursor:pointer}
+.y{background:#fee500;color:#191919}.b{background:#1d4ed8;color:#fff}
+#log{white-space:pre-wrap;background:#f3f4f6;border-radius:8px;padding:12px;font-size:15px}
+</style>
+</head>
+<body>
+<h1>카카오내비 시험 화면</h1>
+<p>목적지: 세광가구 진접 공장 (경기 남양주시 진접읍 경복대로 바람골길 44-2)</p>
+<button class="y" id="b1">1. 카카오내비 길안내 (Navi.start)</button>
+<button class="y" id="b2">2. 카카오내비 목적지 공유 (Navi.share)</button>
+<button class="b" id="b3">3. 카카오맵 앱 자동차 길찾기</button>
+<div id="log">불러오기 준비</div>
+<script src="https://t1.kakaocdn.net/kakao_js_sdk/2.8.1/kakao.min.js"></script>
+<script>
+var KEY = '6578a3cb2998b7b15d7605eae26170c3';
+var DEST = { name: '세광가구 진접공장', x: 127.1888, y: 37.7268 };
+var logEl = document.getElementById('log');
+function log(t){ logEl.textContent += '\n' + t; }
+logEl.textContent = '페이지 주소: ' + location.origin + '\n기기: ' + navigator.userAgent;
+try {
+  if (!window.Kakao) throw Error('카카오 SDK 파일을 못 불러옴');
+  if (!Kakao.isInitialized()) Kakao.init(KEY);
+  log('SDK 버전: ' + Kakao.VERSION + ' / 초기화: ' + Kakao.isInitialized());
+} catch (e) { log('❌ 초기화 실패: ' + e.message); }
+function run(fn){ try { fn(); log('요청 보냄 ' + new Date().toLocaleTimeString('ko-KR')); } catch (e) { log('❌ ' + e.message); } }
+document.getElementById('b1').onclick = function(){ run(function(){ Kakao.Navi.start({ name: DEST.name, x: DEST.x, y: DEST.y, coordType: 'wgs84' }); }); };
+document.getElementById('b2').onclick = function(){ run(function(){ Kakao.Navi.share({ name: DEST.name, x: DEST.x, y: DEST.y, coordType: 'wgs84' }); }); };
+document.getElementById('b3').onclick = function(){ location.href = 'kakaomap://route?ep=' + DEST.y + ',' + DEST.x + '&by=CAR'; log('카카오맵 앱 호출'); };
+</script>
+</body>
+</html>

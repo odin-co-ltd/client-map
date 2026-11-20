@@ -35,6 +35,13 @@ main{display:flex;height:calc(100vh - 70px)}
 .fixmsg{font-size:14px}
 .iw{padding:10px 12px;font-size:15px;line-height:1.5;min-width:240px}
 .iw b{font-size:17px}
+.iw .km{margin-top:6px;padding:6px 8px;background:#fffbea;border-left:4px solid #facc15;font-size:14px;white-space:pre-wrap;max-width:300px}
+.kt{display:inline-block;margin-left:6px;font-size:13px;padding:2px 8px;border-radius:10px;background:#fee500;color:#191919;font-weight:700}
+.ksend{padding:12px 14px;border-bottom:2px solid #e5e7eb}
+.ksend .msg{margin:6px 0;padding:8px 10px;background:#fffbea;border-radius:8px;font-size:16px;white-space:pre-wrap}
+.ksend .when{font-size:13px;color:#6b7280}
+.ksend input{font-size:16px;padding:8px 10px;border:1px solid #9ca3af;border-radius:6px;width:100%;margin-top:6px;box-sizing:border-box}
+.ksend button{margin-top:6px;font-size:16px;padding:8px 14px;border-radius:6px;border:none;background:#1d4ed8;color:#fff;cursor:pointer;min-height:40px}
 .iw button.navi{margin:8px 0 4px;padding:10px 16px;font-size:17px;font-weight:700;border:none;border-radius:8px;background:#fee500;color:#191919;cursor:pointer;min-height:44px}
 .iw a.tel{display:inline-block;margin:2px 0;padding:4px 10px;border-radius:6px;background:#dcfce7;color:#166534;font-weight:700;text-decoration:none}
 #tabs{display:none}
@@ -65,6 +72,7 @@ body.tab-map #list{display:none}
 <button class="f" data-g="신당">신당</button>
 <button class="f" data-g="을지로">을지로</button>
 <button id="missbtn" style="font-size:17px;padding:10px 16px;border-radius:8px;border:1px solid #b91c1c;background:#fff;cursor:pointer;min-height:44px;border-color:#b91c1c;color:#b91c1c">위치 못 찾음만 보기</button>
+<button id="kakaobtn" style="display:none;font-size:16px;padding:8px 14px;border-radius:8px;border:none;background:#fee500;color:#191919;cursor:pointer;min-height:40px;font-weight:700">새 카톡 (0)</button>
 <button id="installbtn" style="display:none;font-size:16px;padding:8px 14px;border-radius:8px;border:none;background:#16a34a;color:#fff;cursor:pointer;min-height:40px;font-weight:700">홈 화면에 추가</button>
 <span id="status">준비</span>
 </header>
@@ -75,24 +83,46 @@ body.tab-map #list{display:none}
 <p id="loginmsg" style="margin:0;font-size:16px;color:#b91c1c"></p>
 </div>
 <div id="tabs"><button data-tab="list" class="on">목록</button><button data-tab="map">지도</button></div>
+<datalist id="clist"></datalist>
 <main><div id="list"></div><div id="map"></div></main>
 <script>
 var DATA = [];
 var GOOGLE_CLIENT_ID = '110271893577-dhusip1o4sb2rr927imrejjckk5i58ea.apps.googleusercontent.com';
-var API = 'https://skod.app.n8n.cloud/webhook/odin-client-map';
-var API_UPDATE = 'https://skod.app.n8n.cloud/webhook/odin-client-map-update';
+var GAS_URL = 'https://script.google.com/macros/s/AKfycbx9czKwhVMCZ_9dCdI0pC4vcluY-NC0q88FdO4GIagNyAJ2AMTzJqpVwBWhzEM7cNQz/exec';
+function gas(body){ return fetch(GAS_URL, { method: 'POST', body: JSON.stringify(body), redirect: 'follow', cache: 'no-store' }).then(function(r){ return r.json(); }).then(function(j){ if (!j.ok) throw Error(j.error || '응답 오류'); return j; }); }
 var TOKEN = '', onlyMiss = false;
+var API_KAKAO = '';
+var KMSGS = [], KLINKS = {}, kakaoView = false;
+function kakaoCall(body){
+  return fetch(API_KAKAO, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TOKEN }, body: JSON.stringify(body), credentials: 'omit', cache: 'no-store' })
+    .then(function(r){ return r.json().then(function(j){ if (!r.ok || !j.ok) throw Error(j.error || ('응답 오류 ' + r.status)); return j; }); });
+}
+function loadKakao(){
+  return;
+  kakaoCall({ action: 'list' }).then(function(j){
+    KMSGS = (j.msgs || []).filter(function(m){ return !/^TEST/.test(m.userKey); });
+    KLINKS = {}; (j.links || []).forEach(function(l){ if (l.code !== 'TEST') KLINKS[l.userKey] = l.code; });
+    if (!document.querySelector('.ksend input:focus')) render();
+  }).catch(function(){ document.getElementById('kakaobtn').textContent = '카톡 불러오기 실패'; });
+}
+function msgsOfCode(code){ return KMSGS.filter(function(m){ return KLINKS[m.userKey] === code; }); }
+function unlinkedSenders(){
+  var by = {}; KMSGS.forEach(function(m){ if (!KLINKS[m.userKey]) { (by[m.userKey] = by[m.userKey] || []).push(m); } });
+  return Object.keys(by).map(function(k){ return { userKey: k, msgs: by[k] }; }).sort(function(a, b){ return a.msgs[0].at < b.msgs[0].at ? 1 : -1; });
+}
+function fmtAt(s){ return String(s || '').slice(5, 16).replace('-', '/'); }
+
 var mapReady = false, dataReady = false;
 function onGoogle(resp){
   var msg = document.getElementById('loginmsg');
   msg.style.color = '#374151'; msg.textContent = '회사 계정 확인 중…';
-  fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + resp.credential }, body: '{}', credentials: 'omit', cache: 'no-store' })
-    .then(function(r){ return r.json().then(function(j){ if (!r.ok || !j.ok) throw Error(j.error || ('응답 오류 ' + r.status)); return j; }); })
+  gas({ token: resp.credential, action: 'list' })
     .then(function(j){
       TOKEN = resp.credential; DATA = j.rows || []; dataReady = true;
+      document.getElementById('clist').innerHTML = DATA.map(function(x){ return '<option value="'+esc(x.n)+'">'; }).join('');
       document.getElementById('login').style.display = 'none';
       try { var p = JSON.parse(atob(resp.credential.split('.')[1].replace(/-/g,'+').replace(/_/g,'/'))); setTimeout(function(){ location.reload(); }, Math.max(60000, p.exp*1000 - Date.now())); } catch (e) {}
-      fitMain(); start();
+      fitMain(); start(); loadKakao();
     })
     .catch(function(e){ msg.style.color = '#b91c1c'; msg.textContent = '로그인 실패: ' + e.message; });
 }
@@ -156,11 +186,24 @@ function visible(){
     return x.n.localeCompare(y.n, 'ko');
   }).filter(function(d){ return (!onlyMiss || !cache[d.code]) && (group==='전체'||d.g===group) && (!q || (d.n+d.ceo+d.a).indexOf(q) >= 0); });
 }
+function renderKakao(){
+  var list = unlinkedSenders(), html = '<div class="it" style="background:#fffbea"><b>새 카톡</b> — 보낸 거래처를 한 번만 골라 연결하면 다음부터 자동으로 그 거래처에 붙습니다</div>';
+  if (!list.length) html += '<div class="it">새로 연결할 카톡이 없습니다.</div>';
+  list.forEach(function(s){
+    html += '<div class="ksend"><div class="when">보낸 사람 #'+esc(s.userKey.slice(-6))+' · 메시지 '+s.msgs.length+'건</div>';
+    s.msgs.slice(0, 5).forEach(function(m){ html += '<div class="msg"><span class="when">'+esc(fmtAt(m.at))+'</span>\n'+esc(m.text)+'</div>'; });
+    html += '<input list="clist" aria-label="거래처 고르기" placeholder="거래처명 입력해서 고르기"><button data-link="'+esc(s.userKey)+'">이 거래처로 연결</button><div class="fixmsg"></div></div>';
+  });
+  document.getElementById('list').innerHTML = html;
+}
 function render(){
+  var kb = document.getElementById('kakaobtn'), un = unlinkedSenders().length;
+  kb.textContent = kakaoView ? '거래처 목록 보기' : ('새 카톡 (' + un + ')');
+  if (kakaoView) { renderKakao(); return; }
   var rows = visible(), html = '', markers = [];
   rows.forEach(function(d){
     var pos = cache[d.code];
-    html += '<div class="it'+(d.code===selCode?' sel':'')+'" data-c="'+esc(d.code)+'"><div class="nm"><span class="tg t'+esc(d.g)+'">'+esc(d.g)+'</span>'+esc(d.n)+'</div><div class="ad">'+esc(d.a)+'</div>'+(pos?'':'<div class="miss">위치 못 찾음 — 아래에서 주소를 고쳐 저장하세요</div><div class="fix" data-fix="1"><input aria-label="새 주소" value="'+esc(cleanAddr(d.a))+'"><div class="row"><button data-save="'+esc(d.code)+'">주소 저장</button><a target="_blank" href="https://map.kakao.com/?q='+encodeURIComponent(d.n.replace(/^[0-9]+\./,'').replace(/[\(/].*$/,''))+'">카카오맵에서 상호 찾아보기</a></div><div class="fixmsg"></div></div>')+'</div>';
+    html += '<div class="it'+(d.code===selCode?' sel':'')+'" data-c="'+esc(d.code)+'"><div class="nm"><span class="tg t'+esc(d.g)+'">'+esc(d.g)+'</span>'+esc(d.n)+(msgsOfCode(d.code).length?'<span class="kt">카톡 '+msgsOfCode(d.code).length+'</span>':'')+'</div><div class="ad">'+esc(d.a)+'</div>'+(pos?'':'<div class="miss">위치 못 찾음 — 아래에서 주소를 고쳐 저장하세요</div><div class="fix" data-fix="1"><input aria-label="새 주소" value="'+esc(cleanAddr(d.a))+'"><div class="row"><button data-save="'+esc(d.code)+'">주소 저장</button><a target="_blank" href="https://map.kakao.com/?q='+encodeURIComponent(d.n.replace(/^[0-9]+\./,'').replace(/[\(/].*$/,''))+'">카카오맵에서 상호 찾아보기</a></div><div class="fixmsg"></div></div>')+'</div>';
     if (pos && clusterer){
       var m = new kakao.maps.Marker({ position: new kakao.maps.LatLng(pos[0], pos[1]), title: d.n });
       kakao.maps.event.addListener(m, 'click', function(){ openInfo(d, m); });
@@ -180,11 +223,14 @@ function telLinks(s){
 }
 function openInfo(d, m){
   selCode = d.code;
-  iw.setContent('<div class="iw"><b>'+esc(d.n)+'</b><br>대표: '+esc(d.ceo||'-')+'<br>핸드폰: '+telLinks(d.hp)+'<br>전화: '+telLinks(d.tel)+'<br>'+esc(d.a)+(d.memo?'<br>비고: '+esc(d.memo):'')+'<br><button class="navi" onclick="startNavi(\''+esc(d.code)+'\')">카카오맵으로 길안내</button><br><a target="_blank" href="https://map.kakao.com/link/to/'+encodeURIComponent(d.n)+','+cache[d.code][0]+','+cache[d.code][1]+'">카카오맵 길찾기</a></div>');
+  iw.setContent('<div class="iw"><b>'+esc(d.n)+'</b><br>대표: '+esc(d.ceo||'-')+'<br>핸드폰: '+telLinks(d.hp)+'<br>전화: '+telLinks(d.tel)+'<br>'+esc(d.a)+(d.memo?'<br>비고: '+esc(d.memo):'')+msgsOfCode(d.code).slice(0,3).map(function(m){ return '<div class="km">'+esc(fmtAt(m.at))+'  '+esc(m.text)+'</div>'; }).join('')+'<br><button class="navi" onclick="startNavi(\''+esc(d.code)+'\')">카카오맵으로 길안내</button><br><a target="_blank" href="https://map.kakao.com/link/to/'+encodeURIComponent(d.n)+','+cache[d.code][0]+','+cache[d.code][1]+'">카카오맵 길찾기</a></div>');
   iw.open(map, m);
   document.querySelectorAll('.it').forEach(function(e){ e.classList.toggle('sel', e.getAttribute('data-c')===d.code); });
 }
 document.getElementById('list').addEventListener('click', function(e){
+  var lb = e.target.closest('[data-link]');
+  if (lb) { linkSender(lb); return; }
+  if (e.target.closest('.ksend')) return;
   var sb = e.target.closest('[data-save]');
   if (sb) { saveAddr(sb); return; }
   if (e.target.closest('[data-fix]')) return;
@@ -205,6 +251,17 @@ function isPhone(){ return window.matchMedia('(max-width:800px)').matches; }
 document.querySelectorAll('#tabs button').forEach(function(b){ b.addEventListener('click', function(){ showTab(b.getAttribute('data-tab')); }); });
 function fitMain(){ var m = document.querySelector('main'); if (isPhone()) { m.style.height = (window.innerHeight - m.getBoundingClientRect().top) + 'px'; } else { m.style.height = ''; } if (map) map.relayout(); }
 window.addEventListener('resize', fitMain);
+document.getElementById('kakaobtn').addEventListener('click', function(){ kakaoView = !kakaoView; if (isPhone()) showTab('list'); render(); loadKakao(); });
+function linkSender(btn){
+  var box = btn.closest('.ksend'), val = box.querySelector('input').value.trim(), msg = box.querySelector('.fixmsg');
+  var d = DATA.filter(function(x){ return x.n === val; })[0];
+  if (!d) { msg.style.color = '#b91c1c'; msg.textContent = '목록에서 거래처 이름을 정확히 골라 주세요.'; return; }
+  btn.disabled = true; msg.style.color = '#374151'; msg.textContent = '⏳ 연결 저장 준비';
+  kakaoCall({ action: 'link', userKey: btn.getAttribute('data-link'), code: d.code }).then(function(){
+    KLINKS[btn.getAttribute('data-link')] = d.code; render();
+    document.getElementById('status').textContent = '✅ ' + d.n + ' 카톡 연결 완료';
+  }).catch(function(e){ btn.disabled = false; msg.style.color = '#b91c1c'; msg.textContent = '❌ ' + e.message; });
+}
 document.getElementById('missbtn').addEventListener('click', function(){ onlyMiss = !onlyMiss; render(); });
 function saveAddr(btn){
   var code = btn.getAttribute('data-save'), box = btn.closest('.fix'), input = box.querySelector('input'), msg = box.querySelector('.fixmsg');
@@ -214,8 +271,7 @@ function saveAddr(btn){
   btn.disabled = true; msg.style.color = '#374151'; msg.textContent = '⏳ 위치 확인 준비';
   geocoder.addressSearch(a, function(r, st){
     if (st !== kakao.maps.services.Status.OK) { btn.disabled = false; msg.style.color = '#b91c1c'; msg.textContent = '❌ 이 주소로도 위치를 못 찾았습니다. 도로명 주소(예: 서울특별시 중구 퇴계로83길 25)로 넣어 주세요.'; return; }
-    fetch(API_UPDATE, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TOKEN }, body: JSON.stringify({ code: code, a: a }), credentials: 'omit', cache: 'no-store' })
-      .then(function(res){ return res.json().then(function(j){ if (!res.ok || !j.ok) throw Error(j.error || ('저장 실패 ' + res.status)); return j; }); })
+    gas({ token: TOKEN, action: 'update', code: code, a: a })
       .then(function(){
         d.a = a; cache[code] = [ +r[0].y, +r[0].x ]; saveCache(); render();
         document.getElementById('status').textContent = '✅ ' + d.n + ' 주소 저장 완료';
